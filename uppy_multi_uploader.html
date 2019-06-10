@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <link href="https://transloadit.edgly.net/releases/uppy/v1.0.0/uppy.min.css" rel="stylesheet">
+  <style>
+    #previews img {
+      display: block;
+      width: 300px;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="wrapper">
+    <button id="uppyModalOpener">多图上传</button>
+  </div>
+  <div id="previews"></div>
+  <div>
+    <a href="https://uppy.io/" target="_blank" style="margin-top: 20px;font-size: 12px;">查看 uppy 文档</a>
+  </div>
+</body>
+<script src="http://cdn.staticfile.org/jquery/2.2.4/jquery.min.js" type="text/javascript" charset="UTF-8"></script>
+<script src="https://transloadit.edgly.net/releases/uppy/v1.0.0/uppy.min.js"></script>
+<!-- 中文语言包 -->
+<script src="./uppy/locales/zh_CN.js"></script>
+<script>
+  var disAllows = []; // 校验不通过的文件
+  // 初始化
+  var uppy = Uppy.Core({
+    id: 'uppy',
+    autoProceed: false, // 自动上传
+    allowMultipleUploads: true, // 仅单文件上传
+    debug: false, // 调试开关
+    restrictions: {
+      maxFileSize: 10485760, // 每个文件最大允许文件，单位 bytes
+      maxNumberOfFiles: 10, // 只允许同时上传 10 张
+      allowedFileTypes: ['image/*', '.jpg', '.jpeg', '.png', '.gif']
+    },
+    // 文件添加之前的钩子函数，可用来做校验
+    onBeforeFileAdded: function(currentFile, files) {
+      console.log(currentFile);
+      // 检查文件尺寸
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        // 判断图片宽高
+        var image = new Image();
+        image.src = e.target.result;
+        image.onload = function() {
+          console.log("图片的宽度为" + this.width + ",长度为" + this.height);
+          var currentFileSize = [this.width, this.height]
+          // 可在此检查文件比例或者宽高
+          var minWidth = 100; // 允许的最小宽度
+          var minHeight = 100; // 允许的最小高度
+          var allowScale = [1/2 , 2/1]; // 允许的图片比例
+          var width = currentFileSize[0];
+          var height = currentFileSize[1];
+          if ( width < minWidth) {
+            var error = `图片宽度[${width}]小于要求[${minWidth}]!`;
+            // log to console
+            uppy.log(error)
+            // show error message to the user
+            uppy.info(error, 'error', 5000)
+            var obj = {
+              name: currentFile.name,
+              error: error
+            }
+            disAllows.push(obj);
+          }
+          if ( height < minHeight) {
+            var error = `图片高度[${height}]小于要求[${minHeight}]!`;
+            // log to console
+            uppy.log(error)
+            // show error message to the user
+            uppy.info(error, 'error', 5000)
+            var obj = {
+              name: currentFile.name,
+              error: error
+            }
+            disAllows.push(obj);
+          }
+          if ( height / width > allowScale[1] || height / width < allowScale[0]) {
+            var error = `图片比例[${width}:${height}]不符合要求[${allowScale[0]} ~ ${allowScale[1]}]!`;
+            // log to console
+            uppy.log(error)
+            // show error message to the user
+            uppy.info(error, 'error', 5000)
+            var obj = {
+              name: currentFile.name,
+              error: error
+            }
+            disAllows.push(obj);
+          }
+        };
+      }
+      reader.readAsDataURL(currentFile.data);
+      return true
+    },
+    // 文件上传之前的钩子函数，在此做文件校验
+    onBeforeUpload: function(files) {
+      console.log(files);
+      // 如果存在不满足条件的图片，禁止上传
+      if(disAllows.length){
+        console.log(disAllows);
+        var errFiles = disAllows.map(function(item){ return (item.name + " (" + item.error + ")")})
+        var error = `以下图片不满足要求：\n${errFiles.join('\n')}`;
+        alert(error);
+        return false;
+      } else {
+        return true;
+      }
+    },
+    // 使用中文语言包
+    locale: zh_CN
+  })
+  // 监听文件移除事件
+  uppy.on('file-removed', function(file) {
+    // 从校验不通过的文件数组中移除该文件
+    console.log('Removed file', file);
+    var name = file.meta.name;
+    disAllows = disAllows.filter(function(item){ return (item.name !== name) });
+  })
+
+  uppy.use(Uppy.Dashboard, {
+    id: 'Dashboard',
+    trigger: '#uppyModalOpener',
+    inline: false,
+    width: 750,
+    height: 550,
+    thumbnailWidth: 280,
+    note: '只能上传图片文件, 10 MB 以内',
+    locale: zh_CN,
+    replaceTargetContent: false,
+    showProgressDetails: true,
+    browserBackButtonClose: true,
+    closeAfterFinish: true, // 上传成功后自动关闭
+    proudlyDisplayPoweredByUppy: false // 隐藏 PoweredBy
+  })
+  // 使用拍摄上传插件
+  //uppy.use(Uppy.Webcam, { target: Uppy.Dashboard })
+
+  // 文件上传接口地址，请改为自己的图片上传接口
+  uppy.use(Uppy.XHRUpload, {
+    endpoint: 'http://47.110.148.192:3232/imgupload/sm.ms',
+    formData: true,
+    fieldName: 'files[]'
+  })
+  uppy.on('complete', function(result) {
+    console.log('Upload complete! We’ve uploaded these files:', result.successful)
+    alert("所有图片上传成功！" );
+    var fileUrls = result.successful.map(function(item){
+      return item.response.body.data.url;
+    })
+    var string = "";
+    fileUrls.forEach(function(url){
+      string += `<img src=${url} >`;
+    })
+    $("#previews").append(string);
+  })
+</script>
+</html>
